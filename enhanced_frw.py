@@ -114,8 +114,9 @@ userbots_lock = threading.Lock()
     # Enhanced admin states
     ADMIN_TASK_MANAGEMENT, ADMIN_CLIENT_SELECTION, ADMIN_TASK_CREATION,
     ADMIN_TASK_EDITING, WAITING_FOR_TASK_NAME, WAITING_FOR_CLIENT_CODE,
-    ADMIN_BULK_OPERATIONS, WAITING_FOR_TEMPLATE_NAME, ADMIN_TEMPLATE_MANAGEMENT
-) = range(35)
+    ADMIN_BULK_OPERATIONS, WAITING_FOR_TEMPLATE_NAME, ADMIN_TEMPLATE_MANAGEMENT,
+    WAITING_FOR_INVITE_DURATION
+) = range(36)
 
 # Enhanced translations dictionary
 translations = {
@@ -901,26 +902,74 @@ def admin_generate_invite(update: Update, context):
         query = update.callback_query
         query.answer()
         
+        query.edit_message_text(
+            "🎫 Generate New Invitation Code\n\n"
+            "Please enter the subscription duration in days (e.g., 30, 60, 90):"
+        )
+        return WAITING_FOR_INVITE_DURATION
+    except Exception as e:
+        logging.error(f"Generate invite error: {e}")
+        query.edit_message_text("An error occurred while starting invitation generation.")
+        return ConversationHandler.END
+
+def process_invite_duration(update: Update, context):
+    """Process the duration input and generate invitation code."""
+    try:
+        user_id = update.effective_user.id
+        if not is_admin(user_id):
+            update.message.reply_text("Unauthorized")
+            return ConversationHandler.END
+        
+        duration_text = update.message.text.strip()
+        
+        # Validate the input
+        try:
+            days = int(duration_text)
+            if days <= 0 or days > 365:
+                update.message.reply_text(
+                    "❌ Invalid duration. Please enter a number between 1 and 365 days."
+                )
+                return WAITING_FOR_INVITE_DURATION
+        except ValueError:
+            update.message.reply_text(
+                "❌ Invalid input. Please enter a valid number of days (e.g., 30, 60, 90)."
+            )
+            return WAITING_FOR_INVITE_DURATION
+        
         # Generate a unique invitation code
         invite_code = str(uuid.uuid4())[:8]
         
-        # Set subscription end to 30 days from now
-        subscription_end = int((datetime.now() + timedelta(days=30)).timestamp())
+        # Set subscription end based on user input
+        subscription_end = int((datetime.now() + timedelta(days=days)).timestamp())
         
         with db_lock:
             cursor.execute("""
                 INSERT INTO clients (invitation_code, subscription_end, created_by, status)
                 VALUES (?, ?, ?, 'inactive')
-            """, (invite_code, subscription_end, update.effective_user.id))
+            """, (invite_code, subscription_end, user_id))
             db.commit()
         
-        log_admin_action(update.effective_user.id, "generate_invite", invite_code, "Generated new invitation code")
+        log_admin_action(user_id, "generate_invite", invite_code, f"Generated new invitation code for {days} days")
         
-        query.edit_message_text(f"✅ New invitation code generated!\n\n🎫 Code: `{invite_code}`\n📅 Valid until: {datetime.fromtimestamp(subscription_end).strftime('%Y-%m-%d')}\n\nSend this code to the client to activate their account.")
+        end_date = datetime.fromtimestamp(subscription_end).strftime('%Y-%m-%d')
+        
+        keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")]]
+        markup = InlineKeyboardMarkup(keyboard)
+        
+        update.message.reply_text(
+            f"✅ New invitation code generated!\n\n"
+            f"🎫 Code: `{invite_code}`\n"
+            f"⏰ Duration: {days} days\n"
+            f"📅 Valid until: {end_date}\n\n"
+            f"Send this code to the client to activate their account.",
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
         return ConversationHandler.END
+        
     except Exception as e:
-        logging.error(f"Generate invite error: {e}")
-        query.edit_message_text("An error occurred while generating invitation code.")
+        logging.error(f"Process invite duration error: {e}")
+        update.message.reply_text("An error occurred while generating invitation code.")
         return ConversationHandler.END
 
 def admin_view_subs(update: Update, context):
@@ -1060,6 +1109,9 @@ if __name__ == "__main__":
             ],
             ADMIN_TEMPLATE_MANAGEMENT: [
                 CallbackQueryHandler(handle_callback_query)
+            ],
+            WAITING_FOR_INVITE_DURATION: [
+                MessageHandler(Filters.text & ~Filters.command, process_invite_duration)
             ],
         },
         fallbacks=[
