@@ -871,17 +871,205 @@ def client_menu(update: Update, context):
 # Add placeholder handlers for the rest of the functionality
 # ... (rest of the handlers would continue here)
 
+def admin_add_userbot(update: Update, context):
+    """Add a new userbot to the system."""
+    try:
+        query = update.callback_query
+        query.answer()
+        query.edit_message_text("🔧 Add Userbot feature coming soon!\n\nThis will allow you to add new userbots to the system.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Add userbot error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def admin_remove_userbot(update: Update, context):
+    """Remove a userbot from the system."""
+    try:
+        query = update.callback_query
+        query.answer()
+        query.edit_message_text("🗑️ Remove Userbot feature coming soon!\n\nThis will allow you to remove userbots from the system.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Remove userbot error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def admin_generate_invite(update: Update, context):
+    """Generate a new invitation code."""
+    try:
+        query = update.callback_query
+        query.answer()
+        
+        # Generate a unique invitation code
+        invite_code = str(uuid.uuid4())[:8]
+        
+        # Set subscription end to 30 days from now
+        subscription_end = int((datetime.now() + timedelta(days=30)).timestamp())
+        
+        with db_lock:
+            cursor.execute("""
+                INSERT INTO clients (invitation_code, subscription_end, created_by, status)
+                VALUES (?, ?, ?, 'inactive')
+            """, (invite_code, subscription_end, update.effective_user.id))
+            db.commit()
+        
+        log_admin_action(update.effective_user.id, "generate_invite", invite_code, "Generated new invitation code")
+        
+        query.edit_message_text(f"✅ New invitation code generated!\n\n🎫 Code: `{invite_code}`\n📅 Valid until: {datetime.fromtimestamp(subscription_end).strftime('%Y-%m-%d')}\n\nSend this code to the client to activate their account.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Generate invite error: {e}")
+        query.edit_message_text("An error occurred while generating invitation code.")
+        return ConversationHandler.END
+
+def admin_view_subs(update: Update, context):
+    """View all client subscriptions."""
+    try:
+        query = update.callback_query
+        query.answer()
+        
+        with db_lock:
+            cursor.execute("""
+                SELECT invitation_code, user_id, subscription_end, status, created_at
+                FROM clients 
+                ORDER BY created_at DESC 
+                LIMIT 10
+            """)
+            clients = cursor.fetchall()
+        
+        if not clients:
+            query.edit_message_text("No clients found.")
+            return ConversationHandler.END
+        
+        message = "📈 Client Subscriptions (Last 10):\n\n"
+        for code, user_id, sub_end, status, created_at in clients:
+            end_date = datetime.fromtimestamp(sub_end).strftime('%Y-%m-%d')
+            created_date = datetime.fromtimestamp(created_at).strftime('%m/%d')
+            status_emoji = "🟢" if status == "active" else "⚪"
+            
+            message += f"{status_emoji} {code}\n"
+            message += f"   User: {user_id or 'Not activated'}\n"
+            message += f"   Expires: {end_date} | Created: {created_date}\n\n"
+        
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_panel")]]
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text(message, reply_markup=markup)
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"View subscriptions error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def admin_view_logs(update: Update, context):
+    """View system logs."""
+    try:
+        query = update.callback_query
+        query.answer()
+        
+        with db_lock:
+            cursor.execute("""
+                SELECT timestamp, event, details, client_id 
+                FROM logs 
+                ORDER BY timestamp DESC 
+                LIMIT 15
+            """)
+            logs = cursor.fetchall()
+        
+        if not logs:
+            query.edit_message_text("No logs found.")
+            return ConversationHandler.END
+        
+        message = "📋 System Logs (Last 15):\n\n"
+        for timestamp, event, details, client_id in logs:
+            log_time = datetime.fromtimestamp(timestamp).strftime('%m/%d %H:%M')
+            message += f"🕒 {log_time} - {event}\n"
+            if client_id:
+                message += f"   Client: {client_id}\n"
+            if details:
+                message += f"   {details[:50]}{'...' if len(details) > 50 else ''}\n"
+            message += "\n"
+        
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_panel")]]
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text(message, reply_markup=markup)
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"View logs error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def admin_extend_sub(update: Update, context):
+    """Extend client subscription."""
+    try:
+        query = update.callback_query
+        query.answer()
+        query.edit_message_text("⏰ Extend Subscription feature coming soon!\n\nThis will allow you to extend client subscription periods.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Extend subscription error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def handle_callback_query(update: Update, context):
+    """Handle all callback queries that don't require conversation state."""
+    query = update.callback_query
+    query.answer()
+    
+    try:
+        if query.data == "admin_manage_client_tasks":
+            return admin_manage_client_tasks(update, context)
+        elif query.data == "admin_view_all_tasks":
+            return admin_view_all_tasks(update, context)
+        elif query.data == "admin_bulk_operations":
+            return admin_bulk_operations(update, context)
+        elif query.data == "admin_task_templates":
+            return admin_task_templates(update, context)
+        elif query.data == "admin_panel":
+            return enhanced_admin_panel(update, context)
+        elif query.data == "admin_add_userbot":
+            return admin_add_userbot(update, context)
+        elif query.data == "admin_remove_userbot":
+            return admin_remove_userbot(update, context)
+        elif query.data == "admin_generate_invite":
+            return admin_generate_invite(update, context)
+        elif query.data == "admin_view_subs":
+            return admin_view_subs(update, context)
+        elif query.data == "admin_view_logs":
+            return admin_view_logs(update, context)
+        elif query.data == "admin_extend_sub":
+            return admin_extend_sub(update, context)
+        else:
+            query.edit_message_text("Feature not implemented yet.")
+            return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Callback query error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
 if __name__ == "__main__":
     # Set up conversation handlers
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            # Add all the conversation states here
-            # This is a simplified version - you would add all the handlers
+            ADMIN_CLIENT_SELECTION: [
+                CallbackQueryHandler(handle_callback_query)
+            ],
+            ADMIN_BULK_OPERATIONS: [
+                CallbackQueryHandler(handle_callback_query)
+            ],
+            ADMIN_TEMPLATE_MANAGEMENT: [
+                CallbackQueryHandler(handle_callback_query)
+            ],
         },
-        fallbacks=[CommandHandler('start', start)]
+        fallbacks=[
+            CommandHandler('start', start),
+            CallbackQueryHandler(handle_callback_query)
+        ]
     )
     
+    # Add the main callback handler for admin panel buttons
+    dp.add_handler(CallbackQueryHandler(handle_callback_query))
     dp.add_handler(conv_handler)
     
     # Start the bot
