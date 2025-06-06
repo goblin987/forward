@@ -262,17 +262,26 @@ try:
                 details TEXT,
                 timestamp INTEGER DEFAULT (strftime('%s', 'now'))
             );
-
-            -- Drop old userbot_settings table if exists and migrate data
-            INSERT OR IGNORE INTO tasks (client_id, userbot_phone, message_link, fallback_message_link, 
-                                       start_time, repetition_interval, status, folder_id, send_to_all_groups, last_run, name)
-            SELECT client_id, userbot_phone, message_link, fallback_message_link, 
-                   start_time, repetition_interval, status, folder_id, send_to_all_groups, last_run,
-                   'Migrated Task - ' || userbot_phone
-            FROM userbot_settings WHERE EXISTS (SELECT name FROM sqlite_master WHERE type='table' AND name='userbot_settings');
-            
-            DROP TABLE IF EXISTS userbot_settings;
         ''')
+        
+        # Check if old table exists separately
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='userbot_settings'")
+        table_exists = cursor.fetchone()
+        
+        if table_exists:
+            # Only migrate if table exists
+            cursor.execute('''
+                INSERT OR IGNORE INTO tasks (client_id, userbot_phone, message_link, fallback_message_link, 
+                                           start_time, repetition_interval, status, folder_id, send_to_all_groups, last_run, name)
+                SELECT client_id, userbot_phone, message_link, fallback_message_link, 
+                       start_time, repetition_interval, status, folder_id, send_to_all_groups, last_run,
+                       'Migrated Task - ' || userbot_phone
+                FROM userbot_settings
+            ''')
+            
+            # Drop the old table after migration
+            cursor.execute("DROP TABLE userbot_settings")
+        
         db.commit()
 except sqlite3.Error as e:
     logging.error(f"Database setup failed: {e}")
