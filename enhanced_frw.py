@@ -872,6 +872,51 @@ def client_menu(update: Update, context):
 # Add placeholder handlers for the rest of the functionality
 # ... (rest of the handlers would continue here)
 
+def process_invitation_code(update: Update, context):
+    """Process invitation code from clients."""
+    try:
+        user_id = update.effective_user.id
+        code = update.message.text.strip()
+        
+        with db_lock:
+            cursor.execute("""
+                SELECT subscription_end, status FROM clients 
+                WHERE invitation_code = ? AND (user_id IS NULL OR user_id = ?)
+            """, (code, user_id))
+            result = cursor.fetchone()
+        
+        if not result:
+            update.message.reply_text(get_text(user_id, 'invalid_code'))
+            return ConversationHandler.END
+        
+        subscription_end, status = result
+        current_time = int(datetime.now(utc_tz).timestamp())
+        
+        # Check if subscription is expired
+        if subscription_end <= current_time:
+            update.message.reply_text("❌ This invitation code has expired.")
+            return ConversationHandler.END
+        
+        # Activate the account
+        with db_lock:
+            cursor.execute("""
+                UPDATE clients 
+                SET user_id = ?, status = 'active' 
+                WHERE invitation_code = ?
+            """, (user_id, code))
+            db.commit()
+        
+        log_event("Client Activated", f"User: {user_id}, Code: {code}")
+        
+        update.message.reply_text(get_text(user_id, 'account_activated'))
+        return client_menu(update, context)
+        
+    except Exception as e:
+        user_id = update.effective_user.id if update.effective_user else "Unknown"
+        log_event("Invitation Code Error", f"User: {user_id}, Error: {e}")
+        update.message.reply_text("❌ An error occurred while processing your invitation code. Please try again.")
+        return ConversationHandler.END
+
 def admin_add_userbot(update: Update, context):
     """Add a new userbot to the system."""
     try:
@@ -1125,6 +1170,9 @@ if __name__ == "__main__":
             CallbackQueryHandler(handle_callback_query)
         ],
         states={
+            WAITING_FOR_CODE: [
+                MessageHandler(Filters.text & ~Filters.command, process_invitation_code)
+            ],
             ADMIN_CLIENT_SELECTION: [
                 CallbackQueryHandler(handle_callback_query)
             ],
