@@ -896,8 +896,8 @@ def admin_remove_userbot(update: Update, context):
         query.edit_message_text("An error occurred.")
         return ConversationHandler.END
 
-def admin_generate_invite(update: Update, context):
-    """Generate a new invitation code."""
+def start_invite_generation(update: Update, context):
+    """Start the invitation generation conversation."""
     try:
         query = update.callback_query
         query.answer()
@@ -908,8 +908,17 @@ def admin_generate_invite(update: Update, context):
         )
         return WAITING_FOR_INVITE_DURATION
     except Exception as e:
-        logging.error(f"Generate invite error: {e}")
+        logging.error(f"Start invite generation error: {e}")
         query.edit_message_text("An error occurred while starting invitation generation.")
+        return ConversationHandler.END
+
+def cancel_invite_generation(update: Update, context):
+    """Cancel invitation generation and return to admin panel."""
+    try:
+        update.message.reply_text("Invitation generation cancelled.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Cancel invite generation error: {e}")
         return ConversationHandler.END
 
 def process_invite_duration(update: Update, context):
@@ -1080,8 +1089,6 @@ def handle_callback_query(update: Update, context):
             return admin_add_userbot(update, context)
         elif query.data == "admin_remove_userbot":
             return admin_remove_userbot(update, context)
-        elif query.data == "admin_generate_invite":
-            return admin_generate_invite(update, context)
         elif query.data == "admin_view_subs":
             return admin_view_subs(update, context)
         elif query.data == "admin_view_logs":
@@ -1097,9 +1104,26 @@ def handle_callback_query(update: Update, context):
         return ConversationHandler.END
 
 if __name__ == "__main__":
-    # Set up conversation handlers
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+    # Set up invitation generation conversation handler
+    invite_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_invite_generation, pattern='^admin_generate_invite$')],
+        states={
+            WAITING_FOR_INVITE_DURATION: [
+                MessageHandler(Filters.text & ~Filters.command, process_invite_duration)
+            ],
+        },
+        fallbacks=[
+            CommandHandler('cancel', cancel_invite_generation),
+            CallbackQueryHandler(handle_callback_query)
+        ]
+    )
+    
+    # Set up main conversation handler
+    main_conv_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler('start', start),
+            CallbackQueryHandler(handle_callback_query)
+        ],
         states={
             ADMIN_CLIENT_SELECTION: [
                 CallbackQueryHandler(handle_callback_query)
@@ -1110,9 +1134,6 @@ if __name__ == "__main__":
             ADMIN_TEMPLATE_MANAGEMENT: [
                 CallbackQueryHandler(handle_callback_query)
             ],
-            WAITING_FOR_INVITE_DURATION: [
-                MessageHandler(Filters.text & ~Filters.command, process_invite_duration)
-            ],
         },
         fallbacks=[
             CommandHandler('start', start),
@@ -1120,9 +1141,9 @@ if __name__ == "__main__":
         ]
     )
     
-    # Add the main callback handler for admin panel buttons
-    dp.add_handler(CallbackQueryHandler(handle_callback_query))
-    dp.add_handler(conv_handler)
+    # Add handlers in order (invitation handler first to catch the specific callback)
+    dp.add_handler(invite_conv_handler)
+    dp.add_handler(main_conv_handler)
     
     # Start the bot
     updater.start_polling()
