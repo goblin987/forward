@@ -880,20 +880,18 @@ def start(update: Update, context):
         if is_admin(user_id):
             return enhanced_admin_panel(update, context)
         
+        # Check if user already has userbots assigned
         with db_lock:
             cursor.execute("SELECT dedicated_userbots FROM clients WHERE user_id = ?", (user_id,))
             result = cursor.fetchone()
+        
         if result and result[0]:
             logging.info(f"User {user_id} has userbots, redirecting to client menu")
             return client_menu(update, context)
         else:
-            if 'prompted_for_code' not in context.user_data:
-                context.user_data['prompted_for_code'] = True
-                update.message.reply_text(get_text(user_id, 'welcome'))
-                return WAITING_FOR_CODE
-            else:
-                update.message.reply_text(get_text(user_id, 'invalid_code'))
-                return ConversationHandler.END
+            # User needs to enter invitation code
+            update.message.reply_text(get_text(user_id, 'welcome'))
+            return WAITING_FOR_CODE
     except Exception as e:
         log_event("Start Command Error", f"User: {user_id}, Error: {e}")
         update.message.reply_text("An error occurred. Please try again later.")
@@ -953,6 +951,8 @@ def handle_callback_query(update: Update, context):
             return admin_task_templates(update, context)
         elif query.data == "admin_panel":
             return enhanced_admin_panel(update, context)
+        elif query.data == "admin_generate_invite":
+            return start_invite_generation(update, context)
         elif query.data == "admin_add_userbot":
             return admin_add_userbot(update, context)
         elif query.data == "admin_remove_userbot":
@@ -1748,12 +1748,16 @@ def start_invite_generation(update: Update, context):
         return ConversationHandler.END
 
 def cancel_invite_generation(update: Update, context):
-    """Cancel invitation generation and return to admin panel."""
+    """Cancel current operation and return to main menu."""
     try:
-        update.message.reply_text("Invitation generation cancelled.")
+        user_id = update.effective_user.id
+        if is_admin(user_id):
+            update.message.reply_text("Operation cancelled. Use /start to return to admin panel.")
+        else:
+            update.message.reply_text("Operation cancelled. Use /start to return to main menu.")
         return ConversationHandler.END
     except Exception as e:
-        logging.error(f"Cancel invite generation error: {e}")
+        logging.error(f"Cancel operation error: {e}")
         return ConversationHandler.END
 
 def admin_add_userbot(update: Update, context):
@@ -2223,20 +2227,6 @@ def process_invite_duration(update: Update, context):
         return ConversationHandler.END
 
 if __name__ == "__main__":
-    # Set up invitation generation conversation handler
-    invite_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_invite_generation, pattern='^admin_generate_invite$')],
-        states={
-            WAITING_FOR_INVITE_DURATION: [
-                MessageHandler(Filters.text & ~Filters.command, process_invite_duration)
-            ],
-        },
-        fallbacks=[
-            CommandHandler('cancel', cancel_invite_generation),
-            CallbackQueryHandler(handle_callback_query)
-        ]
-    )
-    
     # Set up main conversation handler
     main_conv_handler = ConversationHandler(
         entry_points=[
@@ -2246,6 +2236,9 @@ if __name__ == "__main__":
         states={
             WAITING_FOR_CODE: [
                 MessageHandler(Filters.text & ~Filters.command, process_invitation_code)
+            ],
+            WAITING_FOR_INVITE_DURATION: [
+                MessageHandler(Filters.text & ~Filters.command, process_invite_duration)
             ],
             WAITING_FOR_TASK_NAME_CLIENT: [
                 MessageHandler(Filters.text & ~Filters.command, process_task_name)
@@ -2280,15 +2273,15 @@ if __name__ == "__main__":
         },
         fallbacks=[
             CommandHandler('start', start),
+            CommandHandler('cancel', cancel_invite_generation),
             CallbackQueryHandler(handle_callback_query)
         ]
     )
     
-    # Add handlers in order (invitation handler first to catch the specific callback)
-    dp.add_handler(invite_conv_handler)
+    # Add main conversation handler
     dp.add_handler(main_conv_handler)
     
     # Start the bot
     updater.start_polling()
     logging.info("Enhanced Auto Forwarding Bot started!")
-    updater.idle() 
+    updater.idle()
