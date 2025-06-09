@@ -1708,6 +1708,520 @@ def process_invitation_code(update: Update, context):
         update.message.reply_text("❌ An error occurred while processing your invitation code. Please try again.")
         return ConversationHandler.END
 
+# Missing admin functions
+
+def admin_generate_invite(update: Update, context):
+    """Handle the generate invite callback and start the conversation."""
+    try:
+        query = update.callback_query
+        query.answer()
+        return start_invite_generation(update, context)
+    except Exception as e:
+        logging.error(f"Admin generate invite error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def start_invite_generation(update: Update, context):
+    """Start the invitation generation conversation."""
+    try:
+        # Handle both direct calls and callback queries
+        if hasattr(update, 'callback_query') and update.callback_query:
+            query = update.callback_query
+            query.answer()
+            
+            query.edit_message_text(
+                "🎫 Generate New Invitation Code\n\n"
+                "Please enter the subscription duration in days (e.g., 30, 60, 90):"
+            )
+        else:
+            update.message.reply_text(
+                "🎫 Generate New Invitation Code\n\n"
+                "Please enter the subscription duration in days (e.g., 30, 60, 90):"
+            )
+        return WAITING_FOR_INVITE_DURATION
+    except Exception as e:
+        logging.error(f"Start invite generation error: {e}")
+        if hasattr(update, 'callback_query') and update.callback_query:
+            update.callback_query.edit_message_text("An error occurred while starting invitation generation.")
+        else:
+            update.message.reply_text("An error occurred while starting invitation generation.")
+        return ConversationHandler.END
+
+def cancel_invite_generation(update: Update, context):
+    """Cancel invitation generation and return to admin panel."""
+    try:
+        update.message.reply_text("Invitation generation cancelled.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Cancel invite generation error: {e}")
+        return ConversationHandler.END
+
+def admin_add_userbot(update: Update, context):
+    """Add a new userbot to the system."""
+    try:
+        query = update.callback_query
+        query.answer()
+        query.edit_message_text("🔧 Add Userbot feature coming soon!\n\nThis will allow you to add new userbots to the system.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Add userbot error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def admin_remove_userbot(update: Update, context):
+    """Remove a userbot from the system."""
+    try:
+        query = update.callback_query
+        query.answer()
+        query.edit_message_text("🗑️ Remove Userbot feature coming soon!\n\nThis will allow you to remove userbots from the system.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Remove userbot error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def admin_view_subs(update: Update, context):
+    """View all client subscriptions."""
+    try:
+        query = update.callback_query
+        query.answer()
+        
+        with db_lock:
+            cursor.execute("""
+                SELECT invitation_code, user_id, subscription_end, status, created_at
+                FROM clients 
+                ORDER BY created_at DESC 
+                LIMIT 10
+            """)
+            clients = cursor.fetchall()
+        
+        if not clients:
+            query.edit_message_text("No clients found.")
+            return ConversationHandler.END
+        
+        message = "📈 Client Subscriptions (Last 10):\n\n"
+        for code, user_id, sub_end, status, created_at in clients:
+            end_date = datetime.fromtimestamp(sub_end).strftime('%Y-%m-%d')
+            created_date = datetime.fromtimestamp(created_at).strftime('%m/%d')
+            status_emoji = "🟢" if status == "active" else "⚪"
+            
+            message += f"{status_emoji} {code}\n"
+            message += f"   User: {user_id or 'Not activated'}\n"
+            message += f"   Expires: {end_date} | Created: {created_date}\n\n"
+        
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_panel")]]
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text(message, reply_markup=markup)
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"View subscriptions error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def admin_view_logs(update: Update, context):
+    """View system logs."""
+    try:
+        query = update.callback_query
+        query.answer()
+        
+        with db_lock:
+            cursor.execute("""
+                SELECT timestamp, event, details, client_id 
+                FROM logs 
+                ORDER BY timestamp DESC 
+                LIMIT 15
+            """)
+            logs = cursor.fetchall()
+        
+        if not logs:
+            query.edit_message_text("No logs found.")
+            return ConversationHandler.END
+        
+        message = "📋 System Logs (Last 15):\n\n"
+        for timestamp, event, details, client_id in logs:
+            log_time = datetime.fromtimestamp(timestamp).strftime('%m/%d %H:%M')
+            message += f"🕒 {log_time} - {event}\n"
+            if client_id:
+                message += f"   Client: {client_id}\n"
+            if details:
+                message += f"   {details[:50]}{'...' if len(details) > 50 else ''}\n"
+            message += "\n"
+        
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_panel")]]
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text(message, reply_markup=markup)
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"View logs error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def admin_extend_sub(update: Update, context):
+    """Extend client subscription."""
+    try:
+        query = update.callback_query
+        query.answer()
+        query.edit_message_text("⏰ Extend Subscription feature coming soon!\n\nThis will allow you to extend client subscription periods.")
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Extend subscription error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def client_create_task(update: Update, context):
+    """Start creating a new task."""
+    try:
+        query = update.callback_query
+        query.answer()
+        user_id = update.effective_user.id
+        
+        # Get client's userbots
+        with db_lock:
+            cursor.execute("SELECT dedicated_userbots FROM clients WHERE user_id = ?", (user_id,))
+            result = cursor.fetchone()
+        
+        if not result or not result[0]:
+            query.edit_message_text("No userbots assigned to your account.")
+            return ConversationHandler.END
+            
+        userbots = result[0].split(",")
+        
+        message = "📝 **Create New Task**\n\nSelect a userbot for this task:\n\n"
+        keyboard = []
+        
+        for phone in userbots:
+            with db_lock:
+                cursor.execute("SELECT username FROM userbots WHERE phone_number = ?", (phone.strip(),))
+                username_result = cursor.fetchone()
+                username = username_result[0] if username_result and username_result[0] else None
+            display_name = f"@{username}" if username else f"{phone.strip()}"
+            
+            keyboard.append([InlineKeyboardButton(display_name, callback_data=f"select_userbot_{phone.strip()}")])
+        
+        keyboard.append([InlineKeyboardButton("⬅️ Back to Tasks", callback_data="client_setup_tasks")])
+        
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text(message, reply_markup=markup)
+        return WAITING_FOR_USERBOT_SELECTION
+        
+    except Exception as e:
+        log_event("Client Create Task Error", f"User: {user_id}, Error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def client_manage_folders(update: Update, context):
+    """Manage client folders."""
+    try:
+        query = update.callback_query
+        query.answer()
+        user_id = update.effective_user.id
+        
+        # Get existing folders
+        with db_lock:
+            cursor.execute("""
+                SELECT f.id, f.name, COUNT(tg.group_id) as group_count
+                FROM folders f
+                LEFT JOIN target_groups tg ON f.id = tg.folder_id
+                WHERE f.created_by = ?
+                GROUP BY f.id, f.name
+                ORDER BY f.created_at DESC
+            """, (str(user_id),))
+            folders = cursor.fetchall()
+        
+        message = "📁 **Manage Folders**\n\n"
+        keyboard = []
+        
+        if folders:
+            for folder_id, name, group_count in folders:
+                message += f"📂 {name} ({group_count} groups)\n"
+                keyboard.append([InlineKeyboardButton(f"Edit: {name}", callback_data=f"edit_folder_{folder_id}")])
+        else:
+            message += "No folders found. Create your first folder!\n\n"
+        
+        keyboard.append([InlineKeyboardButton("➕ Create New Folder", callback_data="create_new_folder")])
+        keyboard.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_client_menu")])
+        
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text(message, reply_markup=markup)
+        return WAITING_FOR_FOLDER_ACTION
+        
+    except Exception as e:
+        log_event("Client Manage Folders Error", f"User: {user_id}, Error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def client_join_target_groups(update: Update, context):
+    """Join target groups with userbots."""
+    try:
+        query = update.callback_query
+        query.answer()
+        user_id = update.effective_user.id
+        
+        # Get client info
+        with db_lock:
+            cursor.execute("SELECT invitation_code, dedicated_userbots FROM clients WHERE user_id = ?", (user_id,))
+            result = cursor.fetchone()
+        
+        if not result or not result[1]:
+            query.edit_message_text("No userbots assigned to your account.")
+            return ConversationHandler.END
+            
+        invitation_code, userbots_str = result
+        userbots = userbots_str.split(",")
+        
+        # Get folders with groups
+        with db_lock:
+            cursor.execute("""
+                SELECT f.id, f.name, COUNT(tg.group_id) as group_count
+                FROM folders f
+                LEFT JOIN target_groups tg ON f.id = tg.folder_id
+                WHERE f.created_by = ? AND tg.group_id IS NOT NULL
+                GROUP BY f.id, f.name
+                HAVING group_count > 0
+                ORDER BY f.name
+            """, (str(user_id),))
+            folders = cursor.fetchall()
+        
+        message = "🎯 **Join Target Groups**\n\nSelect a folder to join groups from:\n\n"
+        keyboard = []
+        
+        if folders:
+            for folder_id, name, group_count in folders:
+                message += f"📂 {name} ({group_count} groups)\n"
+                keyboard.append([InlineKeyboardButton(f"Join: {name}", callback_data=f"join_folder_{folder_id}")])
+        else:
+            message += "No folders with groups found. Please add groups to your folders first.\n\n"
+        
+        keyboard.append([InlineKeyboardButton("🔗 Join All Groups", callback_data="join_all_groups")])
+        keyboard.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_client_menu")])
+        
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text(message, reply_markup=markup)
+        return ConversationHandler.END
+        
+    except Exception as e:
+        log_event("Client Join Groups Error", f"User: {user_id}, Error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def client_set_language(update: Update, context):
+    """Set client language preference."""
+    try:
+        query = update.callback_query
+        query.answer()
+        user_id = update.effective_user.id
+        
+        keyboard = [
+            [InlineKeyboardButton("🇺🇸 English", callback_data="set_lang_en")],
+            [InlineKeyboardButton("🇺🇦 Українська", callback_data="set_lang_uk")],
+            [InlineKeyboardButton("🇵🇱 Polski", callback_data="set_lang_pl")],
+            [InlineKeyboardButton("🇱🇹 Lietuvių", callback_data="set_lang_lt")],
+            [InlineKeyboardButton("🇷🇺 Русский", callback_data="set_lang_ru")],
+            [InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_client_menu")]
+        ]
+        
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text("🌐 **Select Language**\n\nChoose your preferred language:", reply_markup=markup)
+        return WAITING_FOR_LANGUAGE
+        
+    except Exception as e:
+        log_event("Client Set Language Error", f"User: {user_id}, Error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def client_view_logs(update: Update, context):
+    """View client logs and statistics."""
+    try:
+        query = update.callback_query
+        query.answer()
+        user_id = update.effective_user.id
+        
+        with db_lock:
+            cursor.execute("""
+                SELECT invitation_code, total_messages_sent, groups_reached, forwards_count 
+                FROM clients WHERE user_id = ?
+            """, (user_id,))
+            result = cursor.fetchone()
+        
+        if not result:
+            query.edit_message_text("Account not found.")
+            return ConversationHandler.END
+            
+        invitation_code, total_sent, groups_reached, forwards_count = result
+        
+        # Get recent logs
+        with db_lock:
+            cursor.execute("""
+                SELECT timestamp, event, details 
+                FROM logs WHERE client_id = ? 
+                ORDER BY timestamp DESC LIMIT 10
+            """, (invitation_code,))
+            logs = cursor.fetchall()
+        
+        message = f"📊 **Account Statistics**\n\n"
+        message += f"📨 Total Messages Sent: {total_sent or 0}\n"
+        message += f"👥 Groups Reached: {groups_reached or 0}\n"
+        message += f"🔄 Forwards Count: {forwards_count or 0}\n\n"
+        
+        if logs:
+            message += "📋 **Recent Activity:**\n"
+            for timestamp, event, details in logs[:5]:
+                date_str = datetime.fromtimestamp(timestamp).strftime('%m/%d %H:%M')
+                message += f"• {date_str} - {event}\n"
+        
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_client_menu")]]
+        markup = InlineKeyboardMarkup(keyboard)
+        query.edit_message_text(message, reply_markup=markup)
+        return ConversationHandler.END
+        
+    except Exception as e:
+        log_event("Client View Logs Error", f"User: {user_id}, Error: {e}")
+        query.edit_message_text("An error occurred.")
+        return ConversationHandler.END
+
+def process_group_links_for_folder(update: Update, context):
+    """Process group links for folder."""
+    try:
+        user_id = update.effective_user.id
+        folder_id = context.user_data.get('target_folder_id')
+        
+        if not folder_id:
+            update.message.reply_text("Session expired. Please start over.")
+            return ConversationHandler.END
+        
+        links_text = update.message.text.strip()
+        links = [link.strip() for link in links_text.split('\n') if link.strip()]
+        
+        if not links:
+            update.message.reply_text("No valid links found. Please try again:")
+            return WAITING_FOR_GROUP_LINKS_FOLDER
+        
+        added_count = 0
+        errors = []
+        
+        for link in links:
+            try:
+                # Parse group link/username
+                if link.startswith('@'):
+                    group_username = link[1:]
+                    group_link = f"https://t.me/{group_username}"
+                    group_id = hash(group_username) % (10**15)  # Generate a pseudo ID
+                elif 't.me' in link:
+                    group_link = link
+                    if '/joinchat/' in link:
+                        group_id = hash(link.split('/joinchat/')[1]) % (10**15)
+                    else:
+                        group_username = link.split('/')[-1]
+                        group_id = hash(group_username) % (10**15)
+                else:
+                    errors.append(f"Invalid format: {link}")
+                    continue
+                
+                # Extract group name
+                group_name = link.split('/')[-1] if 't.me' in link else link[1:]
+                
+                # Add to database
+                with db_lock:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO target_groups 
+                        (group_id, group_name, group_link, added_by, folder_id)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (group_id, group_name, group_link, str(user_id), folder_id))
+                    if cursor.rowcount > 0:
+                        added_count += 1
+                    db.commit()
+                
+            except Exception as e:
+                errors.append(f"Error with {link}: {str(e)}")
+        
+        # Get folder name
+        with db_lock:
+            cursor.execute("SELECT name FROM folders WHERE id = ?", (folder_id,))
+            folder_name = cursor.fetchone()[0]
+        
+        message = f"✅ **Groups Added to {folder_name}**\n\n"
+        message += f"✅ Successfully added: {added_count} groups\n"
+        
+        if errors:
+            message += f"❌ Errors: {len(errors)}\n"
+            for error in errors[:3]:  # Show first 3 errors
+                message += f"• {error}\n"
+        
+        log_event("Groups Added to Folder", f"User: {user_id}, Folder: {folder_name}, Count: {added_count}")
+        
+        keyboard = [
+            [InlineKeyboardButton("➕ Add More Groups", callback_data=f"add_groups_{folder_id}")],
+            [InlineKeyboardButton("⬅️ Back to Folders", callback_data="client_manage_folders")]
+        ]
+        markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text(message, reply_markup=markup)
+        return ConversationHandler.END
+        
+    except Exception as e:
+        log_event("Process Group Links Error", f"User: {user_id}, Error: {e}")
+        update.message.reply_text("An error occurred. Please try again.")
+        return ConversationHandler.END
+
+def process_invite_duration(update: Update, context):
+    """Process the duration input and generate invitation code."""
+    try:
+        user_id = update.effective_user.id
+        if not is_admin(user_id):
+            update.message.reply_text("Unauthorized")
+            return ConversationHandler.END
+        
+        duration_text = update.message.text.strip()
+        
+        # Validate the input
+        try:
+            days = int(duration_text)
+            if days <= 0 or days > 365:
+                update.message.reply_text(
+                    "❌ Invalid duration. Please enter a number between 1 and 365 days."
+                )
+                return WAITING_FOR_INVITE_DURATION
+        except ValueError:
+            update.message.reply_text(
+                "❌ Invalid input. Please enter a valid number of days (e.g., 30, 60, 90)."
+            )
+            return WAITING_FOR_INVITE_DURATION
+        
+        # Generate a unique invitation code
+        invite_code = str(uuid.uuid4())[:8]
+        
+        # Set subscription end based on user input
+        subscription_end = int((datetime.now() + timedelta(days=days)).timestamp())
+        
+        with db_lock:
+            cursor.execute("""
+                INSERT INTO clients (invitation_code, subscription_end, created_by, status)
+                VALUES (?, ?, ?, 'inactive')
+            """, (invite_code, subscription_end, user_id))
+            db.commit()
+        
+        log_admin_action(user_id, "generate_invite", invite_code, f"Generated new invitation code for {days} days")
+        
+        end_date = datetime.fromtimestamp(subscription_end).strftime('%Y-%m-%d')
+        
+        keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")]]
+        markup = InlineKeyboardMarkup(keyboard)
+        
+        update.message.reply_text(
+            f"✅ New invitation code generated!\n\n"
+            f"🎫 Code: `{invite_code}`\n"
+            f"⏰ Duration: {days} days\n"
+            f"📅 Valid until: {end_date}\n\n"
+            f"Send this code to the client to activate their account.",
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+        
+    except Exception as e:
+        logging.error(f"Process invite duration error: {e}")
+        update.message.reply_text("An error occurred while generating invitation code.")
+        return ConversationHandler.END
+
 if __name__ == "__main__":
     # Set up invitation generation conversation handler
     invite_conv_handler = ConversationHandler(
