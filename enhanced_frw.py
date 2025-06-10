@@ -1710,17 +1710,6 @@ def process_invitation_code(update: Update, context):
 
 # Missing admin functions
 
-def admin_generate_invite(update: Update, context):
-    """Handle the generate invite callback and start the conversation."""
-    try:
-        query = update.callback_query
-        query.answer()
-        return start_invite_generation(update, context)
-    except Exception as e:
-        logging.error(f"Admin generate invite error: {e}")
-        query.edit_message_text("An error occurred.")
-        return ConversationHandler.END
-
 def start_invite_generation(update: Update, context):
     """Start the invitation generation conversation."""
     try:
@@ -1745,6 +1734,17 @@ def start_invite_generation(update: Update, context):
             update.callback_query.edit_message_text("An error occurred while starting invitation generation.")
         else:
             update.message.reply_text("An error occurred while starting invitation generation.")
+        return ConversationHandler.END
+
+def admin_generate_invite(update: Update, context):
+    """Handle the generate invite callback and start the conversation."""
+    try:
+        query = update.callback_query
+        query.answer()
+        return start_invite_generation(update, context)
+    except Exception as e:
+        logging.error(f"Admin generate invite error: {e}")
+        query.edit_message_text("An error occurred.")
         return ConversationHandler.END
 
 def cancel_invite_generation(update: Update, context):
